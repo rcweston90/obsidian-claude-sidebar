@@ -2,7 +2,7 @@
 
 Run Claude Code in your Obsidian sidebar.
 
-Built by [Derek Larson](https://dtlarson.com) - [Pair with commands →](https://delegatewithclaude.com/commands)
+Built by [Derek Larson](https://dtlarson.com) - [Pairs with Delegate commands →](https://delegatewithclaude.com/commands)
 
 ![Claude Sidebar](screenshot-obsidian.png)
 
@@ -144,7 +144,7 @@ The PTY scripts (`terminal_pty.py` for Unix, `terminal_win.py` for Windows) are 
 
 ## Contributing
 
-Issues and PRs welcome at [github.com/derek-larson14/obsidian-claude-sidebar](https://github.com/derek-larson14/obsidian-claude-sidebar)
+Hit a bug or want a new feature? Tell your coding agent to read `CLAUDE.md` in this repo. It will walk you through diagnosis, filing a report, or opening a PR.
 
 ## License
 
