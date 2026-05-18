@@ -25,12 +25,7 @@ Built by [Derek Larson](https://dtlarson.com) - [Pairs with Delegate commands �
 
 ### From Community Plugins (recommended)
 
-Two ways:
-
-- **Install in Obsidian Settings:** click [obsidian://show-plugin?id=claude-sidebar](obsidian://show-plugin?id=claude-sidebar) to open the install screen inside Obsidian, then Install → Enable.
-- **Search in Obsidian:** Settings → Community Plugins → Browse → search "Claude Sidebar" → Install → Enable.
-
-Plugin listing: [community.obsidian.md/plugins/claude-sidebar](https://community.obsidian.md/plugins/claude-sidebar)
+Visit the plugin listing at [community.obsidian.md/plugins/claude-sidebar](https://community.obsidian.md/plugins/claude-sidebar) and click **Add to Obsidian**. Then in Obsidian, click **Install** → **Enable**.
 
 **Windows:** See [Windows Setup](#windows-setup) below.
 
