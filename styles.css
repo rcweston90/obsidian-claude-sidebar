@@ -28,14 +28,17 @@
 .vault-terminal-host .xterm {
 	height: 100%;
 	/* DO NOT add padding here - it breaks xterm canvas character positioning */
-	background-color: var(--background-secondary) !important;
+	background-color: var(--background-secondary);
 }
 
 .vault-terminal-host .xterm .xterm-screen {
-	background-color: var(--background-secondary) !important;
+	background-color: var(--background-secondary);
 }
 
 .vault-terminal-host .xterm-viewport {
+	/* !important required: this selector ties xterm's own `.xterm .xterm-viewport`
+	   on specificity, and xterm injects its stylesheet at runtime (often after
+	   styles.css), so a tie would otherwise resolve to xterm's scroll/#000 bg. */
 	overflow-y: auto !important;
 	background-color: var(--background-secondary) !important;
 	overscroll-behavior: contain;
@@ -46,10 +49,10 @@
 .vault-terminal-host .xterm .xterm-helper-textarea {
 	/* Allow xterm.js to position the textarea for IME support */
 	/* The textarea must remain in the document flow for IME candidate window positioning */
-	opacity: 0 !important;
-	border: 0 !important;
-	padding: 0 !important;
-	outline: none !important;
+	opacity: 0;
+	border: 0;
+	padding: 0;
+	outline: none;
 	/* Prevent textarea from affecting layout while keeping it positioned correctly */
 	pointer-events: none;
 }
