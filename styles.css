@@ -45,6 +45,27 @@
 	scrollbar-gutter: stable;
 }
 
+/* Environment variables setting: stack vertically so the textarea spans full width */
+.claude-sidebar-env-setting {
+	display: block;
+}
+
+.claude-sidebar-env-setting .setting-item-info {
+	margin-bottom: 8px;
+}
+
+.claude-sidebar-env-setting .setting-item-control {
+	width: 100%;
+}
+
+.claude-sidebar-env-setting textarea {
+	width: 100%;
+	min-height: 2.6em;
+	resize: vertical;
+	overflow-y: hidden;
+	font-family: var(--font-monospace);
+}
+
 /* IME support: keep textarea positioned near cursor for input method candidate window */
 .vault-terminal-host .xterm .xterm-helper-textarea {
 	/* Allow xterm.js to position the textarea for IME support */

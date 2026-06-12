@@ -7659,6 +7659,19 @@ var TerminalView = class extends import_obsidian.ItemView {
       }
     }
 
+    // User-defined environment variables (KEY=VALUE per line). Lets users set
+    // things like CLAUDE_CONFIG_DIR to keep multiple Claude accounts separate.
+    const envVarsRaw = this.plugin.pluginData.claudeEnvVars || "";
+    for (const line of envVarsRaw.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      const val = trimmed.slice(eq + 1).trim();
+      if (key) shellEnv[key] = val;
+    }
+
     this.proc = (0, import_child_process.spawn)(cmd, args, {
       cwd,
       env: shellEnv,
@@ -7910,6 +7923,26 @@ var ClaudeSidebarSettingsTab = class extends import_obsidian.PluginSettingTab {
           }
           await this.plugin.saveData(this.plugin.pluginData);
         }));
+    const envSetting = new import_obsidian.Setting(containerEl)
+      .setName("Environment variables")
+      .setDesc("One KEY=VALUE per line, passed to every session.")
+      .addTextArea(text => {
+        const grow = () => {
+          text.inputEl.style.height = "auto";
+          text.inputEl.style.height = text.inputEl.scrollHeight + "px";
+        };
+        text
+          .setPlaceholder("CLAUDE_CONFIG_DIR=/Users/you/.claude-work")
+          .setValue(this.plugin.pluginData.claudeEnvVars || "")
+          .onChange(async (value) => {
+            this.plugin.pluginData.claudeEnvVars = value;
+            grow();
+            await this.plugin.saveData(this.plugin.pluginData);
+          });
+        text.inputEl.rows = 2;
+        setTimeout(grow, 0);
+      });
+    envSetting.settingEl.addClass("claude-sidebar-env-setting");
   }
 };
 var VaultTerminalPlugin = class extends import_obsidian.Plugin {
