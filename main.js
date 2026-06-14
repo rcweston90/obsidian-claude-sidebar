@@ -6907,13 +6907,23 @@ var TerminalView = class extends import_obsidian.ItemView {
       }
       return true; // Let Obsidian handle it normally
     });
-    this.app.keymap.pushScope(this.escapeScope);
+    // Keep the Scope pushed ONLY while focus is inside the sidebar. A pushed
+    // Obsidian Scope routes keys through its chain instead of down to the
+    // editor, which bypasses CodeMirror's editor-level keymaps (Find Next/
+    // Previous, etc.). Leaving it pushed for the whole view lifetime broke
+    // editor search whenever the sidebar was open (#82). Push on focus in,
+    // pop on focus out so the editor behaves normally when it has focus.
+    this.scopePushed = false;
     // Ctrl+O: Claude Code "expand command preview". Only register the binding
     // while focus is inside the sidebar — once Obsidian's Scope owns a key,
     // returning true does not fall through to the built-in Quick Switcher
     // (Ctrl+O on Linux/Windows), so leaving it registered globally breaks it.
     this.ctrlOBinding = null;
     this.ctrlOFocusIn = () => {
+      if (!this.scopePushed) {
+        this.app.keymap.pushScope(this.escapeScope);
+        this.scopePushed = true;
+      }
       if (!this.ctrlOBinding) {
         this.ctrlOBinding = this.escapeScope.register(['Ctrl'], 'o', () => {
           if (this.proc && !this.proc.killed) {
@@ -6925,9 +6935,15 @@ var TerminalView = class extends import_obsidian.ItemView {
     };
     this.ctrlOFocusOut = () => {
       setTimeout(() => {
-        if (this.ctrlOBinding && !this.containerEl.contains(document.activeElement)) {
-          this.escapeScope.unregister(this.ctrlOBinding);
-          this.ctrlOBinding = null;
+        if (!this.containerEl.contains(document.activeElement)) {
+          if (this.ctrlOBinding) {
+            this.escapeScope.unregister(this.ctrlOBinding);
+            this.ctrlOBinding = null;
+          }
+          if (this.scopePushed) {
+            this.app.keymap.popScope(this.escapeScope);
+            this.scopePushed = false;
+          }
         }
       }, 0);
     };
@@ -7812,7 +7828,10 @@ var TerminalView = class extends import_obsidian.ItemView {
         this.escapeScope.unregister(this.ctrlOBinding);
         this.ctrlOBinding = null;
       }
-      this.app.keymap.popScope(this.escapeScope);
+      if (this.scopePushed) {
+        this.app.keymap.popScope(this.escapeScope);
+        this.scopePushed = false;
+      }
       this.escapeScope = null;
     }
     if (this.imagePasteHandler) {
