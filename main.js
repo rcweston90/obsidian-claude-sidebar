@@ -7232,6 +7232,7 @@ var TerminalView = class extends import_obsidian.ItemView {
       return;
     this.term = new import_xterm.Terminal({
       cursorBlink: true,
+      copyOnSelect: true,
       fontSize: 13,
       fontFamily: "Menlo, Monaco, 'Cascadia Mono', 'Cascadia Code', Consolas, 'Courier New', 'Microsoft YaHei', 'SimHei', 'PingFang SC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', monospace",
       theme: this.getThemeColors(),
@@ -7358,15 +7359,63 @@ var TerminalView = class extends import_obsidian.ItemView {
     };
     this.termHost.addEventListener('dragover', this.fileDragOverHandler);
     this.termHost.addEventListener('drop', this.fileDropHandler);
-    // Windows right-click paste: Windows terminal convention is right-click = paste
-    if (process.platform === 'win32') {
-      this.termHost.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
+    // macOS Ctrl+click arrives as a button-0 mousedown WITH ctrlKey (not a real
+    // right-click). xterm treats that as the start of a selection drag: it clears the
+    // current selection (so the menu's Copy would be empty) and, because the matching
+    // mouseup is swallowed by the menu, leaves the terminal stuck mid-drag (the cursor
+    // keeps extending a highlight). Intercept it in the capture phase before xterm's
+    // selection service sees it: stash the live selection for the menu, and stop the
+    // event so no drag starts. The separate contextmenu event still fires, so the menu
+    // opens. Real right-clicks (button 2) don't have this problem; we just stash for them.
+    this.termPreContextHandler = (e) => {
+      const isCtrlClick = process.platform === "darwin" && e.button === 0 && e.ctrlKey;
+      if (!(e.button === 2 || isCtrlClick)) return;
+      this._ctxSelection = this.term?.getSelection() || "";
+      if (isCtrlClick) {
         e.stopPropagation();
-        navigator.clipboard.readText().then((text) => {
-          if (text) this.term.paste(text);
-        }).catch(() => {});
+        e.stopImmediatePropagation();
+      }
+    };
+    this.termHost.addEventListener("mousedown", this.termPreContextHandler, true);
+    // Right-click context menu: Copy (when text is selected) / Paste. Cross-platform —
+    // replaces the old Windows-only right-click-paste so Mac and Linux get a menu too.
+    // Electron clipboard with a navigator.clipboard fallback.
+    this.termContextMenuHandler = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const sel = this._ctxSelection || this.term?.getSelection() || "";
+      this._ctxSelection = "";
+      const menu = new import_obsidian.Menu();
+      menu.addItem((i) => i.setTitle("Copy").setIcon("copy").setDisabled(!sel).onClick(() => {
+        try { require("electron").clipboard.writeText(sel); }
+        catch (_) { navigator.clipboard?.writeText(sel).catch(() => {}); }
+      }));
+      menu.addItem((i) => i.setTitle("Paste").setIcon("clipboard-paste").onClick(async () => {
+        let text = "";
+        try { text = require("electron").clipboard.readText() || ""; }
+        catch (_) { text = (await navigator.clipboard?.readText?.().catch(() => "")) || ""; }
+        if (text) this.term?.paste(text);
+      }));
+      menu.showAtMouseEvent(e);
+    };
+    this.termHost.addEventListener("contextmenu", this.termContextMenuHandler);
+    // Linux primary-selection clipboard (X11 convention): selecting text copies it to the
+    // PRIMARY buffer and middle-click pastes from PRIMARY — a separate clipboard from
+    // Ctrl+C/Ctrl+V. Only Electron's 'selection' clipboard exposes it, and only on Linux.
+    // (Requested by @DZPM on PR #71.) Untested on Linux; isolated and fails silently.
+    if (process.platform === "linux") {
+      this.termPrimarySelectionSub = this.term.onSelectionChange(() => {
+        const sel = this.term?.getSelection();
+        if (sel) { try { require("electron").clipboard.writeText(sel, "selection"); } catch (_) {} }
       });
+      this.termMiddleClickHandler = (e) => {
+        if (e.button !== 1) return; // middle button only
+        e.preventDefault();
+        let text = "";
+        try { text = require("electron").clipboard.readText("selection") || ""; } catch (_) {}
+        if (text) this.term?.paste(text);
+      };
+      this.termHost.addEventListener("auxclick", this.termMiddleClickHandler);
     }
     const isMac = process.platform === 'darwin';
     // Keys the terminal must keep regardless of Obsidian bindings.
@@ -7868,6 +7917,22 @@ var TerminalView = class extends import_obsidian.ItemView {
     if (this.fileDropHandler && this.termHost) {
       this.termHost.removeEventListener('drop', this.fileDropHandler);
       this.fileDropHandler = null;
+    }
+    if (this.termPreContextHandler && this.termHost) {
+      this.termHost.removeEventListener("mousedown", this.termPreContextHandler, true);
+      this.termPreContextHandler = null;
+    }
+    if (this.termContextMenuHandler && this.termHost) {
+      this.termHost.removeEventListener("contextmenu", this.termContextMenuHandler);
+      this.termContextMenuHandler = null;
+    }
+    if (this.termMiddleClickHandler && this.termHost) {
+      this.termHost.removeEventListener("auxclick", this.termMiddleClickHandler);
+      this.termMiddleClickHandler = null;
+    }
+    if (this.termPrimarySelectionSub) {
+      this.termPrimarySelectionSub.dispose?.();
+      this.termPrimarySelectionSub = null;
     }
     this.term?.dispose();
     this.term = null;
