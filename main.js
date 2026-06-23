@@ -7840,6 +7840,7 @@ var TerminalView = class extends import_obsidian.ItemView {
         if (this.proc && !this.proc.killed) {
           let winCmd = backend.binary;
           if (yoloMode && backend.yoloFlag) winCmd += ' ' + backend.yoloFlag;
+          if (additionalFlags) winCmd += ' ' + additionalFlags;
           this.proc.stdin?.write(winCmd + '\r');
         }
       }, 1000);
