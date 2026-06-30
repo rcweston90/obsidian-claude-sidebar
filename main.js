@@ -7499,7 +7499,8 @@ var TerminalView = class extends import_obsidian.ItemView {
           ev.preventDefault();
           const selection = this.term.getSelection();
           if (selection) {
-            navigator.clipboard.writeText(selection).catch(() => {});
+            try { require("electron").clipboard.writeText(selection); }
+            catch (_) { navigator.clipboard?.writeText(selection).catch(() => {}); }
           } else {
             this.proc?.stdin?.write('\x03');
           }
