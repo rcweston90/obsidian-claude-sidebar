@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.claude-sidebar.bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/richardweston/Documents/Claude/Projects/Obsidian Plugin/obsidian-claude-sidebar/bridge/server.js</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BRIDGE_TOKEN</key>
+    <string>594f4e46a41c5b24d57d7b9ce4608f98d6b8573ff324e19a</string>
+    <key>BRIDGE_HOST</key>
+    <string>0.0.0.0</string>
+    <key>BRIDGE_PORT</key>
+    <string>8898</string>
+    <key>BRIDGE_CWD</key>
+    <string>/Users/richardweston/Library/Mobile Documents/iCloud~md~obsidian/Documents/Charlie Weston</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/claude-sidebar-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/claude-sidebar-bridge.log</string>
+</dict>
+</plist>

@@ -1,0 +1,13 @@
+{
+  "name": "claude-sidebar-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebSocket-to-PTY bridge so mobile Obsidian can attach to Claude Code running on a host machine",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

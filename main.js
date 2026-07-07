@@ -6701,10 +6701,24 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian = require("obsidian");
 var import_xterm = __toESM(require_xterm());
 var import_addon_fit = __toESM(require_addon_fit());
-var import_child_process = require("child_process");
-var path = __toESM(require("path"));
-var fs = __toESM(require("fs"));
-var { StringDecoder } = require("string_decoder");
+// Mobile (Capacitor WebView) has no Node built-ins — guard the requires so the
+// plugin can load there. On mobile the terminal attaches to a remote bridge
+// over WebSocket (see startBridgeShell) instead of spawning a local process.
+var IS_MOBILE_ENV = import_obsidian.Platform.isMobileApp;
+var import_child_process = null;
+var path = null;
+var fs = null;
+var StringDecoder = null;
+if (!IS_MOBILE_ENV) {
+  import_child_process = require("child_process");
+  path = __toESM(require("path"));
+  fs = __toESM(require("fs"));
+  StringDecoder = require("string_decoder").StringDecoder;
+}
+if (typeof globalThis.process === "undefined") {
+  // Minimal shim so stray process.* checks don't throw on mobile.
+  globalThis.process = { platform: "mobile", env: {}, kill: () => {} };
+}
 var VIEW_TYPE = "vault-terminal";
 var CLI_BACKENDS = {
   claude: {
@@ -7674,6 +7688,10 @@ var TerminalView = class extends import_obsidian.ItemView {
   }
   startShell(workingDir = null, yoloMode = false, continueSession = false) {
     this.stopShell();
+    if (IS_MOBILE_ENV || this.plugin.pluginData.bridgeAlways) {
+      this.startBridgeShell(workingDir, yoloMode, continueSession);
+      return;
+    }
     const defaultDir = this.plugin.pluginData.defaultWorkingDir;
     const vaultPath = this.plugin.getVaultPath();
     const resolvedDefault = defaultDir ? path.resolve(vaultPath, defaultDir) : vaultPath;
@@ -7875,6 +7893,132 @@ var TerminalView = class extends import_obsidian.ItemView {
         }
       }, 1000);
     }
+  }
+  // Attach to a remote bridge (bridge/server.js) over WebSocket instead of
+  // spawning a local process. Used on mobile, or on desktop when the
+  // "Always use bridge" setting is enabled. The remote end runs the same
+  // terminal_pty.py + `claude || true; exec $SHELL -i` session as desktop,
+  // so the byte protocol (including \x1b]RESIZE;cols;rows\x07) is identical.
+  startBridgeShell(workingDir = null, yoloMode = false, continueSession = false) {
+    const data = this.plugin.pluginData || {};
+    const baseUrl = (data.bridgeUrl || "").trim().replace(/\/+$/, "");
+    const token = (data.bridgeToken || "").trim();
+    if (!baseUrl) {
+      this.term?.writeln("[Claude Sidebar] No bridge URL configured.");
+      this.term?.writeln("Set Bridge URL (ws://host:8898) and token in plugin settings,");
+      this.term?.writeln("and run bridge/server.js on your computer. See the repo's bridge/README.md.");
+      return;
+    }
+    const cols = this.term?.cols || 80;
+    const rows = this.term?.rows || 24;
+    const params = new URLSearchParams({ token, cols: String(cols), rows: String(rows) });
+    if (yoloMode) params.set("yolo", "1");
+    if (continueSession) params.set("continue", "1");
+    const remoteCwd = workingDir || data.bridgeWorkingDir || null;
+    if (remoteCwd) params.set("cwd", remoteCwd);
+    let ws;
+    try {
+      ws = new WebSocket(`${baseUrl}/pty?${params.toString()}`);
+    } catch (e) {
+      this.term?.writeln(`\r\n[Bridge error: ${e.message}]`);
+      return;
+    }
+    ws.binaryType = "arraybuffer";
+    const listeners = {};
+    const proc = {
+      killed: false,
+      pid: null,
+      exitCode: null,
+      stdin: {
+        write: (chunk) => {
+          try {
+            if (ws.readyState === 1) ws.send(chunk);
+          } catch (e) {}
+        }
+      },
+      stdout: { on: () => {} },
+      stderr: { on: () => {} },
+      on: (ev, fn) => {
+        (listeners[ev] = listeners[ev] || []).push(fn);
+      },
+      once: (ev, fn) => {
+        const wrapped = (...args) => {
+          listeners[ev] = (listeners[ev] || []).filter((x) => x !== wrapped);
+          fn(...args);
+        };
+        proc.on(ev, wrapped);
+      },
+      emit: (ev, ...args) => {
+        for (const fn of (listeners[ev] || []).slice()) {
+          try { fn(...args); } catch (e) {}
+        }
+      },
+      kill: () => {
+        proc.killed = true;
+        try { ws.close(); } catch (e) {}
+      }
+    };
+    this.proc = proc;
+    const decoder = new TextDecoder("utf-8");
+    ws.onopen = () => {
+      this.term?.focus();
+    };
+    ws.onmessage = (ev) => {
+      this.hasOutput = true;
+      const text = typeof ev.data === "string" ? ev.data : decoder.decode(ev.data, { stream: true });
+      if (!this.term) return;
+      const buffer = this.term.buffer.active;
+      const userScrolled = Date.now() - this.userScrolledAt < 5000;
+      const atBottom = !userScrolled && buffer.baseY === buffer.viewportY;
+      const savedViewportY = buffer.viewportY;
+      const hasCursorHome = text.includes("\x1b[H");
+      this.term.write(text);
+      if (atBottom) {
+        this.term.scrollToBottom();
+      } else if (!hasCursorHome) {
+        if (buffer.viewportY !== savedViewportY) {
+          this.term.scrollToLine(savedViewportY);
+        }
+      }
+      if (hasCursorHome) {
+        this._fitPending = true;
+        this._scrollTarget = savedViewportY;
+        this.debouncedFit();
+      }
+    };
+    ws.onerror = () => {
+      this.term?.writeln("\r\n[Bridge connection error — check the URL/token and that the bridge is running]");
+    };
+    ws.onclose = (ev) => {
+      const wasMine = this.proc === proc;
+      proc.killed = true;
+      proc.exitCode = 0;
+      if (wasMine) {
+        if (this.hasOutput || ev.code === 1000) {
+          this.term?.writeln(`\r\n[Bridge disconnected${ev.code && ev.code !== 1e3 ? " (" + ev.code + ")" : ""}]`);
+        } else if (ev.code === 1008 || ev.code === 4001) {
+          this.term?.writeln("\r\n[Bridge rejected the connection — check the token]");
+        } else {
+          this.term?.writeln("\r\n[Could not reach bridge — check the URL and that the bridge is running]");
+        }
+        this.proc = null;
+      }
+      proc.emit("exit", ev.code, null);
+    };
+    this.term?.onResize(({ cols: c, rows: r }) => {
+      if (this.proc === proc && !proc.killed) {
+        proc.stdin.write(`\x1b]RESIZE;${c};${r}\x07`);
+      }
+    });
+    setTimeout(() => {
+      if (this.proc === proc && !proc.killed && this.fitAddon) {
+        const dims = this.fitAddon.proposeDimensions();
+        if (dims && dims.rows > 0) {
+          proc.stdin.write(`\x1b]RESIZE;${dims.cols};${dims.rows}\x07`);
+        }
+      }
+    }, 500);
+    this.term?.focus();
   }
   stopShell() {
     const p = this.proc;
@@ -8081,6 +8225,55 @@ var ClaudeSidebarSettingsTab = class extends import_obsidian.PluginSettingTab {
         setTimeout(grow, 0);
       });
     envSetting.settingEl.addClass("claude-sidebar-env-setting");
+    new import_obsidian.Setting(containerEl).setName("Remote bridge").setHeading();
+    containerEl.createEl("p", {
+      text: "On mobile, the sidebar connects to a bridge server running on a computer where the Claude CLI is installed and logged in (see bridge/README.md in the repo). Use Tailscale or your LAN — never expose the bridge to the public internet.",
+      cls: "setting-item-description"
+    });
+    new import_obsidian.Setting(containerEl)
+      .setName("Bridge URL")
+      .setDesc("WebSocket URL of the bridge, e.g. ws://my-mac:8898")
+      .addText(text => text
+        .setPlaceholder("ws://192.168.1.10:8898")
+        .setValue(this.plugin.pluginData.bridgeUrl || "")
+        .onChange(async (value) => {
+          this.plugin.pluginData.bridgeUrl = value.trim() || null;
+          await this.plugin.saveData(this.plugin.pluginData);
+        }));
+    new import_obsidian.Setting(containerEl)
+      .setName("Bridge token")
+      .setDesc("Must match BRIDGE_TOKEN on the bridge server.")
+      .addText(text => {
+        text.inputEl.type = "password";
+        text
+          .setPlaceholder("shared secret")
+          .setValue(this.plugin.pluginData.bridgeToken || "")
+          .onChange(async (value) => {
+            this.plugin.pluginData.bridgeToken = value.trim() || null;
+            await this.plugin.saveData(this.plugin.pluginData);
+          });
+      });
+    new import_obsidian.Setting(containerEl)
+      .setName("Bridge working directory")
+      .setDesc("Directory on the bridge host where sessions start. Leave empty for the bridge's default.")
+      .addText(text => text
+        .setPlaceholder("/Users/you/vault")
+        .setValue(this.plugin.pluginData.bridgeWorkingDir || "")
+        .onChange(async (value) => {
+          this.plugin.pluginData.bridgeWorkingDir = value.trim() || null;
+          await this.plugin.saveData(this.plugin.pluginData);
+        }));
+    if (!IS_MOBILE_ENV) {
+      new import_obsidian.Setting(containerEl)
+        .setName("Always use bridge")
+        .setDesc("Use the remote bridge on desktop too, instead of a local shell. Handy for testing the bridge from your computer.")
+        .addToggle(toggle => toggle
+          .setValue(!!this.plugin.pluginData.bridgeAlways)
+          .onChange(async (value) => {
+            this.plugin.pluginData.bridgeAlways = value;
+            await this.plugin.saveData(this.plugin.pluginData);
+          }));
+    }
   }
 };
 var VaultTerminalPlugin = class extends import_obsidian.Plugin {
