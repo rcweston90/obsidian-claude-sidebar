@@ -43,6 +43,10 @@ In Claude Sidebar settings on the phone set:
 
 The plugin automatically uses the bridge on mobile. On desktop you can force it with the "Always use bridge" toggle (useful for testing).
 
+## macOS permissions gotcha (important)
+
+launchd agents are denied access to iCloud Drive, `~/Documents`, and `~/Desktop` by TCC — a session whose working directory is in one of those **hangs silently with no output**. Either point `BRIDGE_CWD` somewhere unprotected (e.g. `$HOME`), or grant `/opt/homebrew/bin/node` **Full Disk Access** (System Settings → Privacy & Security) and restart the agent, after which the iCloud vault works as `BRIDGE_CWD`. When run in a normal terminal (not launchd) this doesn't apply.
+
 ## Networking
 
 Prefer Tailscale: install on the Mac and phone, log into the same tailnet, then use `ws://<mac-tailscale-name>:8898`. Traffic is WireGuard-encrypted end to end, no ports exposed to the internet. Do **not** port-forward this bridge to the public internet — the token is the only gate, and the session is a full shell on your machine.
